@@ -1,4 +1,4 @@
-# YOLO-GUI: Complete Object Detection Solution
+# YOLO_web_UI: Complete Object Detection Solution
 
 <div align="center">
   <p>
@@ -19,7 +19,7 @@
 <a name="english"></a>
 ## 🌟 Project Overview
 
-**YOLO-GUI** is a comprehensive object detection platform that combines:
+**YOLO_web_UI** is a comprehensive object detection platform that combines:
 - **GUI Application**: A user-friendly Gradio-based web interface for real-time object detection
 - **YOLO Library**: The complete Ultralytics YOLO v8.4.0 engine for training and inference
 
@@ -36,7 +36,7 @@ This project provides both a production-ready web interface and the underlying Y
 ## 🏗️ Project Structure
 
 ```
-YOLO-GUI/
+YOLO_web_UI/
 ├── GUI/                         # Gradio Web Application (User Interface)
 │   ├── gradio_app.py           # Main web interface (448 lines)
 │   ├── model_manager.py        # Model discovery and loading
@@ -164,7 +164,7 @@ yolo detect train data=coco8.yaml model=yolo26n.pt epochs=100 imgsz=640
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd YOLO-GUI
+cd YOLO_web_UI
 
 # Install GUI dependencies
 cd GUI
@@ -514,7 +514,7 @@ If you use YOLO in your research, please cite:
 ---
 
 <a name="中文"></a>
-# YOLO-GUI: 完整的目标检测解决方案
+# YOLO_web_UI: 完整的目标检测解决方案
 
 <div align="center">
   <p>
@@ -534,7 +534,7 @@ If you use YOLO in your research, please cite:
 
 ## 🌟 项目概述
 
-**YOLO-GUI** 是一个完整的目标检测平台，包含：
+**YOLO_web_UI** 是一个完整的目标检测平台，包含：
 - **GUI应用程序**: 基于Gradio的用户友好网页界面，用于实时目标检测
 - **YOLO库**: 完整的Ultralytics YOLO v8.4.0引擎，用于训练和推理
 
@@ -551,7 +551,7 @@ If you use YOLO in your research, please cite:
 ## 🏗️ 项目结构
 
 ```
-YOLO-GUI/
+YOLO_web_UI/
 ├── GUI/                         # Gradio网页应用程序（用户界面）
 │   ├── gradio_app.py           # 主网页界面（448行）
 │   ├── model_manager.py        # 模型发现和加载
@@ -679,7 +679,7 @@ yolo detect train data=coco8.yaml model=yolo26n.pt epochs=100 imgsz=640
 ```bash
 # 克隆仓库
 git clone <仓库地址>
-cd YOLO-GUI
+cd YOLO_web_UI
 
 # 安装GUI依赖
 cd GUI

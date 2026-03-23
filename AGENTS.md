@@ -1,4 +1,4 @@
-# AGENTS.md - Development Guidelines for YOLO-GUI
+# AGENTS.md - Development Guidelines for YOLO_web_UI
 
 ## Project Structure Overview
 
