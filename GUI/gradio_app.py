@@ -15,6 +15,16 @@ from typing import Optional
 
 import gradio as gr
 
+try:
+    from fastrtc import WebRTC
+except ImportError:
+    print("⚠️  fastrtc 未安装，正在尝试安装...")
+    import subprocess
+    import sys
+
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "fastrtc"])
+    from fastrtc import WebRTC
+
 # 导入自定义模块
 from model_manager import ModelManager
 from detection_engine import DetectionEngine, format_detection_info
@@ -62,6 +72,14 @@ custom_css = """
     padding: 15px;
     margin: 10px 0;
     border-radius: 0 10px 10px 0;
+}
+/* WebRTC组件尺寸限制 */
+.webrtc-container {
+    max-height: 400px !important;
+}
+.webrtc-container video {
+    max-height: 400px !important;
+    object-fit: contain !important;
 }
 """
 
@@ -179,35 +197,72 @@ def detect_video(video_path, conf_threshold, model_name, progress=gr.Progress())
         return None, f"❌ 视频处理失败: {str(e)}"
 
 
-# 全局变量用于帧跳过逻辑
-_frame_counter = 0
-_skip_interval = 1  # 默认不跳过，每帧都处理
+# 帧率同步控制变量
+last_frame_time = 0
+target_fps = 20  # 默认目标帧率
 
 
-def process_webcam_frame(frame, conf_threshold, model_name):
-    """处理摄像头帧（用于实时流）"""
-    global current_model, detection_engine, _frame_counter, _skip_interval
+def set_target_fps(fps):
+    """设置目标帧率"""
+    global target_fps
+    target_fps = fps
+
+
+def webrtc_detection(frame, conf_threshold, fps_value=20):
+    """
+    WebRTC实时检测处理函数
+
+    Args:
+        frame: 输入视频帧 (numpy数组)
+        conf_threshold: 置信度阈值
+        fps_value: 目标帧率
+
+    Returns:
+        处理后的视频帧
+    """
+    global current_model, detection_engine, last_frame_time, target_fps
+
+    # 更新目标帧率
+    target_fps = fps_value
 
     if frame is None:
-        return None
+        # 返回空白帧而不是None
+        return np.zeros((480, 640, 3), dtype=np.uint8)
 
-    # 帧跳过逻辑：如果处理太慢，可以跳过一些帧
-    _frame_counter += 1
-    if _frame_counter % _skip_interval != 0:
-        return frame  # 返回原始帧，不进行检测
+    # 帧率同步：控制处理频率
+    current_time = time.time()
+    frame_interval = 1.0 / target_fps
+    time_since_last_frame = current_time - last_frame_time
+
+    if time_since_last_frame < frame_interval:
+        # 距离上一帧的时间不足，跳过处理返回原始帧（保持流畅）
+        return frame
 
     # 确保模型已加载
     if current_model is None or detection_engine is None:
-        if model_name and model_name != "无可用模型":
-            load_model(model_name)
-        else:
-            return frame
+        # 模型未加载时返回原始帧
+        return frame
 
     try:
-        result_frame = detection_engine.process_webcam_frame(frame, conf_threshold)
-        return result_frame if result_frame is not None else frame
+        # 执行YOLO检测
+        # frame已经是RGB格式（WebRTC组件自动转换）
+        results = current_model(frame, conf=conf_threshold, verbose=False)
+        result_frame = results[0].plot()
+
+        # YOLO的plot()返回BGR格式，需要转换为RGB
+        if len(result_frame.shape) == 3 and result_frame.shape[2] == 3:
+            result_frame = cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB)
+
+        # 更新最后处理时间
+        last_frame_time = time.time()
+
+        return result_frame
     except Exception as e:
-        print(f"摄像头处理错误: {e}")
+        print(f"WebRTC检测错误: {e}")
+        import traceback
+
+        traceback.print_exc()
+        # 出错时返回原始帧
         return frame
 
 
@@ -343,7 +398,7 @@ def get_camera_list():
 
 
 # 创建Gradio界面
-with gr.Blocks(title="YOLO目标检测系统") as demo:
+with gr.Blocks(title="YOLO目标检测系统", css=custom_css) as demo:
     # 标题
     gr.Markdown("""
     <div class="main-title">🚀 YOLO 目标检测系统</div>
@@ -412,40 +467,75 @@ with gr.Blocks(title="YOLO目标检测系统") as demo:
                 outputs=[output_video, video_info],
             )
 
-        # 标签页3: 摄像头实时检测
+        # 标签页3: 摄像头实时检测 (使用WebRTC)
         with gr.Tab("📹 实时检测"):
             with gr.Row():
-                gr.Markdown("""### 📹 摄像头实时检测
-点击开始后，允许浏览器访问摄像头
-
-💡 **性能提示**：如果画面卡顿，可以尝试：
-- 使用更小的YOLO模型（如YOLO26n）
-- 降低摄像头分辨率
-- 确保GPU加速已启用""")
-
-            with gr.Row():
                 with gr.Column():
-                    camera_input = gr.Image(
-                        label="摄像头输入",
-                        sources=["webcam"],
-                        streaming=True,
-                        type="numpy",
+                    # WebRTC视频组件 - 输入侧
+                    gr.Markdown("""**📹 摄像头实时检测**
+点击"开始"后，允许浏览器访问摄像头""")
+                    webrtc_stream = WebRTC(
+                        label="实时检测输入",
+                        rtc_configuration={
+                            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+                        },
+                        height=400,
+                    )
+                    # 帧率控制滑块
+                    fps_slider = gr.Slider(
+                        minimum=5,
+                        maximum=30,
+                        value=20,
+                        step=1,
+                        label="🎯 帧率控制 (FPS)",
+                        info="调整检测帧率，较低值可提高检测精度",
                     )
 
                 with gr.Column():
-                    camera_output = gr.Image(
-                        label="检测结果", streaming=True, type="numpy"
+                    # 输出侧
+                    gr.Markdown("""**🔍 检测结果**""")
+                    # 实时检测状态显示
+                    webrtc_status = gr.Textbox(
+                        label="检测状态",
+                        value="请先加载模型，然后点击视频下方的'开始'按钮",
+                        interactive=False,
+                        lines=3,
+                    )
+                    # FPS统计显示
+                    fps_display = gr.Textbox(
+                        label="帧率统计",
+                        value="当前目标帧率: 20 FPS",
+                        interactive=False,
+                        lines=1,
                     )
 
-            # 实时流处理
-            # stream_every=0.05 表示每50ms处理一帧，约20 FPS
-            # 这是性能和流畅度的平衡值，可根据需要调整
-            camera_input.stream(
-                fn=process_webcam_frame,
-                inputs=[camera_input, conf_slider, model_dropdown],
-                outputs=[camera_output],
-                time_limit=300,  # 5分钟
-                stream_every=0.05,  # 约20 FPS，平衡流畅度和性能
+            # WebRTC流处理 - 使用stream方法
+            # 注意：WebRTC使用不同的处理方式，不需要time_limit参数
+            webrtc_stream.stream(
+                fn=webrtc_detection,
+                inputs=[webrtc_stream, conf_slider, fps_slider],
+                outputs=[webrtc_stream],
+            )
+
+            # 更新状态显示
+            def update_webrtc_status():
+                if current_model is None:
+                    return "❌ 模型未加载 - 请先加载模型后再开始实时检测"
+                return "✅ 模型已加载 - 可以点击'开始'按钮启动实时检测"
+
+            # 当模型加载后更新状态
+            load_model_btn.click(
+                fn=lambda: update_webrtc_status(), outputs=[webrtc_status]
+            )
+
+            # 帧率滑块变化时更新显示
+            def update_fps_display(fps):
+                return f"当前目标帧率: {fps} FPS"
+
+            fps_slider.change(
+                fn=update_fps_display,
+                inputs=[fps_slider],
+                outputs=[fps_display],
             )
 
         # 标签页4: 批量检测
