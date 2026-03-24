@@ -211,10 +211,10 @@ def process_webcam_frame(frame, conf_threshold, model_name):
         return frame
 
 
-def batch_detect(files, conf_threshold, model_name, progress=gr.Progress()):
-    """批量检测上传的图片文件"""
-    if not files or len(files) == 0:
-        return "⚠️ 请选择要检测的图片文件", None, ""
+def batch_detect(folder_files, conf_threshold, model_name, progress=gr.Progress()):
+    """批量检测上传的文件夹中的图片，并打包成ZIP供下载"""
+    if not folder_files or len(folder_files) == 0:
+        return "⚠️ 请选择要检测的文件夹", None, ""
 
     # 确保模型已加载
     if current_model is None or detection_engine is None:
@@ -223,19 +223,41 @@ def batch_detect(files, conf_threshold, model_name, progress=gr.Progress()):
             return f"❌ 模型未加载\n{load_status}", None, ""
 
     try:
-        # 过滤有效的图片文件
+        # 从上传的文件夹中收集所有图片文件
+        # folder_files 是一个文件列表，包含文件夹中的所有文件
         image_files = []
-        for file_info in files:
+        supported_formats = (
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".bmp",
+            ".webp",
+            ".gif",
+            ".tiff",
+            ".tif",
+        )
+
+        for file_info in folder_files:
+            # Gradio上传的文件可能是字典或字符串路径
             if isinstance(file_info, dict):
                 file_path = file_info.get("name", "")
+                file_path = file_info.get("path", file_path)  # 优先使用path
+            elif isinstance(file_info, str):
+                file_path = file_info
             else:
-                file_path = str(file_info)
+                # 可能是FileData对象
+                file_path = getattr(file_info, "name", str(file_info))
 
-            if file_path.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp")):
+            # 检查是否是支持的图片格式
+            if file_path.lower().endswith(supported_formats):
                 image_files.append(file_path)
 
         if not image_files:
-            return "⚠️ 没有有效的图片文件", None, ""
+            return (
+                f"⚠️ 文件夹中没有找到支持的图片格式\n支持的格式: {', '.join(supported_formats)}",
+                None,
+                "",
+            )
 
         total_files = len(image_files)
         results_list = []
@@ -266,16 +288,46 @@ def batch_detect(files, conf_threshold, model_name, progress=gr.Progress()):
         # 生成报告
         summary = create_detection_summary(results_list)
 
-        # 保存结果到临时目录
+        # 保存结果到临时目录并打包成ZIP
         import tempfile
+        import zipfile
+        from datetime import datetime
 
+        # 创建临时目录保存结果
         save_dir = tempfile.mkdtemp(prefix="detection_output_")
-        save_path = save_detection_results(results_list, save_dir)
+        result_dir = save_detection_results(results_list, save_dir)
 
-        return summary, save_path, f"✅ 已保存到: {save_path}"
+        # 创建ZIP文件
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_filename = f"detection_results_{timestamp}.zip"
+        zip_path = os.path.join(save_dir, zip_filename)
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(result_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, save_dir)
+                    zipf.write(file_path, arcname)
+
+        # 获取CSV和HTML报告路径
+        result_path = Path(result_dir)
+        csv_path = str(result_path / "detection_report.csv")
+        html_path = str(result_path / "detection_report.html")
+
+        return (
+            summary,
+            zip_path,
+            csv_path,
+            html_path,
+            f"✅ 检测完成！共处理 {len(results_list)} 张图片。ZIP包含所有结果，CSV和HTML报告可单独下载",
+        )
 
     except Exception as e:
-        return f"❌ 批量检测失败: {str(e)}", None, ""
+        import traceback
+
+        error_detail = traceback.format_exc()
+        print(f"批量检测错误: {error_detail}")
+        return f"❌ 批量检测失败: {str(e)}", None, None, None, ""
 
 
 def get_camera_list():
@@ -400,10 +452,11 @@ with gr.Blocks(title="YOLO目标检测系统") as demo:
         with gr.Tab("📂 批量检测"):
             with gr.Row():
                 with gr.Column():
-                    batch_files_input = gr.File(
-                        label="📁 选择图片文件",
-                        file_count="multiple",
-                        file_types=[".jpg", ".jpeg", ".png", ".bmp", ".webp"],
+                    gr.Markdown("""### 📁 上传文件夹
+支持上传整个文件夹，系统会自动识别其中的图片文件（.jpg, .jpeg, .png, .bmp, .webp）""")
+                    batch_folder_input = gr.File(
+                        label="📁 选择文件夹",
+                        file_count="directory",
                     )
                     batch_detect_btn = gr.Button("🚀 开始批量检测", variant="primary")
 
@@ -413,13 +466,35 @@ with gr.Blocks(title="YOLO目标检测系统") as demo:
                     )
 
             with gr.Row():
-                save_path_output = gr.Textbox(label="📁 保存路径", interactive=False)
+                with gr.Column():
+                    download_output = gr.File(
+                        label="📥 下载完整结果 (ZIP)",
+                        interactive=False,
+                    )
+                with gr.Column():
+                    csv_download = gr.File(
+                        label="📊 下载CSV报告",
+                        interactive=False,
+                    )
+                with gr.Column():
+                    html_download = gr.File(
+                        label="🌐 下载HTML报告",
+                        interactive=False,
+                    )
+
+            with gr.Row():
                 save_status = gr.Textbox(label="保存状态", interactive=False)
 
             batch_detect_btn.click(
                 fn=batch_detect,
-                inputs=[batch_files_input, conf_slider, model_dropdown],
-                outputs=[batch_summary, save_path_output, save_status],
+                inputs=[batch_folder_input, conf_slider, model_dropdown],
+                outputs=[
+                    batch_summary,
+                    download_output,
+                    csv_download,
+                    html_download,
+                    save_status,
+                ],
             )
 
         # 标签页5: 模型信息
