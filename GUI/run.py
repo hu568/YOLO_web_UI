@@ -3,6 +3,8 @@
 """
 Run Script - 启动脚本
 启动Gradio YOLO检测应用
+
+Gradio 6.9.0 兼容版本
 """
 
 import sys
@@ -11,15 +13,22 @@ from pathlib import Path
 
 
 def check_dependencies():
-    """检查必要的依赖"""
+    """检查必要的依赖
+
+    Returns:
+        bool: 所有依赖是否都已安装
+    """
     missing = []
 
     try:
         import gradio
 
         print(f"✅ Gradio 版本: {gradio.__version__}")
+        # 检查版本是否为6.9.0
+        if gradio.__version__ != "6.9.0":
+            print(f"⚠️  警告: 当前Gradio版本为 {gradio.__version__}，推荐使用 6.9.0")
     except ImportError:
-        missing.append("gradio")
+        missing.append("gradio==6.9.0")
 
     try:
         import ultralytics
@@ -49,6 +58,14 @@ def check_dependencies():
     except ImportError:
         missing.append("pillow")
 
+    try:
+        from fastrtc import WebRTC
+
+        print(f"✅ FastRTC 已安装（实时检测可用）")
+    except ImportError:
+        print(f"⚠️  FastRTC 未安装（实时检测功能将不可用）")
+        print(f"   安装命令: pip install fastrtc")
+
     if missing:
         print("\n❌ 缺少以下依赖包:")
         for pkg in missing:
@@ -72,7 +89,7 @@ def create_directories():
 def main():
     """主函数"""
     print("=" * 60)
-    print("🚀 YOLO目标检测系统 - Gradio版本")
+    print("🚀 YOLO目标检测系统 - Gradio 6.9.0版本")
     print("=" * 60)
     print()
 
@@ -97,6 +114,7 @@ def main():
     try:
         from gradio_app import demo
 
+        # Gradio 6.x: theme/css 参数移至 launch() 方法
         demo.launch(
             server_name="0.0.0.0", server_port=7860, share=False, show_error=True
         )
