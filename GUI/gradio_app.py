@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 import gradio as gr
+from gradio.themes import Ocean
 
 # 导入自定义模块
 from model_manager import ModelManager
@@ -433,7 +434,10 @@ def show_model_info():
 # ==================== Gradio 6.9.0 界面构建 ====================
 
 # Gradio 6.x: theme/css 参数移至 launch() 方法
-with gr.Blocks(title="YOLO目标检测系统") as demo:
+# 使用海洋主题
+ocean_theme = Ocean()
+
+with gr.Blocks(title="YOLO目标检测系统", theme=ocean_theme) as demo:
     # 标题
     gr.Markdown("""
     <div class="main-title">🚀 YOLO 目标检测系统</div>
