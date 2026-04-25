@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Gradio YOLO Detection App - Gradio主应用
+Gradio YOLO Detection App - Gradio 6.9.0 主应用
 使用Gradio Blocks构建的YOLO目标检测Web界面
+
+Gradio 6.9.0 重要变更：
+- theme/css/js 参数从 gr.Blocks() 移至 launch() 方法
+- 统一的事件驱动架构
+- 标准化的组件接口
+- 原生支持 streaming 实时视频流（替代 fastrtc）
 """
 
 import os
@@ -14,16 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 import gradio as gr
-
-try:
-    from fastrtc import WebRTC
-except ImportError:
-    print("⚠️  fastrtc 未安装，正在尝试安装...")
-    import subprocess
-    import sys
-
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "fastrtc"])
-    from fastrtc import WebRTC
+from gradio.themes import Ocean
 
 # 导入自定义模块
 from model_manager import ModelManager
@@ -41,7 +38,7 @@ model_manager = ModelManager()
 current_model = None
 detection_engine = None
 
-# CSS样式
+# CSS样式 - Gradio 6.x 中通过 launch() 方法传入
 custom_css = """
 .gradio-container {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -73,13 +70,9 @@ custom_css = """
     margin: 10px 0;
     border-radius: 0 10px 10px 0;
 }
-/* WebRTC组件尺寸限制 */
-.webrtc-container {
-    max-height: 400px !important;
-}
-.webrtc-container video {
-    max-height: 400px !important;
-    object-fit: contain !important;
+.webcam-container {
+    max-width: 640px !important;
+    max-height: 480px !important;
 }
 """
 
@@ -93,7 +86,14 @@ def refresh_model_list():
 
 
 def load_model(model_name: str):
-    """加载模型"""
+    """加载模型
+
+    Args:
+        model_name: 模型名称
+
+    Returns:
+        加载状态信息
+    """
     global current_model, detection_engine
 
     if model_name == "无可用模型":
@@ -112,7 +112,16 @@ def load_model(model_name: str):
 
 
 def detect_single_image(image, conf_threshold, model_name):
-    """检测单张图片"""
+    """检测单张图片
+
+    Args:
+        image: 输入图像
+        conf_threshold: 置信度阈值
+        model_name: 模型名称
+
+    Returns:
+        (结果图像, 检测信息)
+    """
     if image is None:
         return None, "⚠️ 请先上传图片"
 
@@ -135,7 +144,17 @@ def detect_single_image(image, conf_threshold, model_name):
 
 
 def detect_video(video_path, conf_threshold, model_name, progress=gr.Progress()):
-    """检测视频文件"""
+    """检测视频文件
+
+    Args:
+        video_path: 视频文件路径
+        conf_threshold: 置信度阈值
+        model_name: 模型名称
+        progress: Gradio进度条对象
+
+    Returns:
+        (输出视频路径, 处理信息)
+    """
     if video_path is None:
         return None, "⚠️ 请先上传视频文件"
 
@@ -197,55 +216,45 @@ def detect_video(video_path, conf_threshold, model_name, progress=gr.Progress())
         return None, f"❌ 视频处理失败: {str(e)}"
 
 
-# 帧率同步控制变量
-last_frame_time = 0
-target_fps = 20  # 默认目标帧率
+# ==================== Gradio 6.x 原生 Streaming 实时检测 ====================
 
 
-def set_target_fps(fps):
-    """设置目标帧率"""
-    global target_fps
-    target_fps = fps
-
-
-def webrtc_detection(frame, conf_threshold, fps_value=20):
+def webcam_detection_stream(frame, conf_threshold):
     """
-    WebRTC实时检测处理函数
+    Gradio 6.x 原生 Streaming 实时检测处理函数
+    使用 gr.Image(streaming=True) 替代 fastrtc WebRTC
 
     Args:
-        frame: 输入视频帧 (numpy数组)
+        frame: 输入视频帧 (numpy数组，RGB格式)
         conf_threshold: 置信度阈值
-        fps_value: 目标帧率
 
     Returns:
-        处理后的视频帧
+        处理后的视频帧 (RGB格式)
     """
-    global current_model, detection_engine, last_frame_time, target_fps
-
-    # 更新目标帧率
-    target_fps = fps_value
+    global current_model, detection_engine
 
     if frame is None:
-        # 返回空白帧而不是None
+        # 返回空白帧
         return np.zeros((480, 640, 3), dtype=np.uint8)
-
-    # 帧率同步：控制处理频率
-    current_time = time.time()
-    frame_interval = 1.0 / target_fps
-    time_since_last_frame = current_time - last_frame_time
-
-    if time_since_last_frame < frame_interval:
-        # 距离上一帧的时间不足，跳过处理返回原始帧（保持流畅）
-        return frame
 
     # 确保模型已加载
     if current_model is None or detection_engine is None:
-        # 模型未加载时返回原始帧
-        return frame
+        # 模型未加载时返回原始帧，并在图像上添加提示文字
+        frame_with_text = frame.copy()
+        cv2.putText(
+            frame_with_text,
+            "Please load model first",
+            (50, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (255, 0, 0),
+            2,
+        )
+        return frame_with_text
 
     try:
-        # 执行YOLO检测
-        # frame已经是RGB格式（WebRTC组件自动转换）
+        # frame 已经是 RGB 格式（Gradio 自动转换）
+        # 执行 YOLO 检测
         results = current_model(frame, conf=conf_threshold, verbose=False)
         result_frame = results[0].plot()
 
@@ -253,29 +262,46 @@ def webrtc_detection(frame, conf_threshold, fps_value=20):
         if len(result_frame.shape) == 3 and result_frame.shape[2] == 3:
             result_frame = cv2.cvtColor(result_frame, cv2.COLOR_BGR2RGB)
 
-        # 更新最后处理时间
-        last_frame_time = time.time()
-
         return result_frame
     except Exception as e:
-        print(f"WebRTC检测错误: {e}")
+        print(f"实时检测错误: {e}")
         import traceback
 
         traceback.print_exc()
-        # 出错时返回原始帧
+        # 出错时返回原始帧，并添加错误提示
+        frame_with_text = frame.copy()
+        cv2.putText(
+            frame_with_text,
+            f"Error: {str(e)[:30]}",
+            (50, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 0, 0),
+            2,
+        )
         return frame
 
 
 def batch_detect(folder_files, conf_threshold, model_name, progress=gr.Progress()):
-    """批量检测上传的文件夹中的图片，并打包成ZIP供下载"""
+    """批量检测上传的文件夹中的图片，并打包成ZIP供下载
+
+    Args:
+        folder_files: 文件夹中的文件列表
+        conf_threshold: 置信度阈值
+        model_name: 模型名称
+        progress: Gradio进度条对象
+
+    Returns:
+        (汇总信息, ZIP文件路径, CSV文件路径, HTML文件路径, 保存状态)
+    """
     if not folder_files or len(folder_files) == 0:
-        return "⚠️ 请选择要检测的文件夹", None, ""
+        return "⚠️ 请选择要检测的文件夹", None, None, None, ""
 
     # 确保模型已加载
     if current_model is None or detection_engine is None:
         load_status = load_model(model_name)
         if current_model is None:
-            return f"❌ 模型未加载\n{load_status}", None, ""
+            return f"❌ 模型未加载\n{load_status}", None, None, None, ""
 
     try:
         # 从上传的文件夹中收集所有图片文件
@@ -310,6 +336,8 @@ def batch_detect(folder_files, conf_threshold, model_name, progress=gr.Progress(
         if not image_files:
             return (
                 f"⚠️ 文件夹中没有找到支持的图片格式\n支持的格式: {', '.join(supported_formats)}",
+                None,
+                None,
                 None,
                 "",
             )
@@ -385,24 +413,35 @@ def batch_detect(folder_files, conf_threshold, model_name, progress=gr.Progress(
         return f"❌ 批量检测失败: {str(e)}", None, None, None, ""
 
 
-def get_camera_list():
-    """获取摄像头列表"""
-    cameras = list_available_cameras()
-    if not cameras:
-        return gr.Dropdown(choices=["未检测到摄像头"], value="未检测到摄像头")
+def show_model_info():
+    """显示模型信息
 
-    camera_options = [f"{cam['name']} ({cam['resolution']})" for cam in cameras]
-    return gr.Dropdown(
-        choices=camera_options, value=camera_options[0] if camera_options else None
-    )
+    Returns:
+        模型信息文本
+    """
+    if current_model is None:
+        return "❌ 尚未加载模型\n\n请先选择一个模型并点击'加载模型'按钮"
+
+    info = f"✅ 当前模型: {model_manager.current_model_path}\n\n"
+    info += f"📊 类别数量: {len(model_manager.class_names)}\n\n"
+    info += f"📋 类别列表:\n"
+    for i, name in enumerate(model_manager.class_names, 1):
+        info += f"  {i}. {name}\n"
+
+    return info
 
 
-# 创建Gradio界面
-with gr.Blocks(title="YOLO目标检测系统", css=custom_css) as demo:
+# ==================== Gradio 6.9.0 界面构建 ====================
+
+# Gradio 6.x: theme/css 参数移至 launch() 方法
+# 使用海洋主题
+ocean_theme = Ocean()
+
+with gr.Blocks(title="YOLO目标检测系统", theme=ocean_theme, css=custom_css) as demo:
     # 标题
     gr.Markdown("""
     <div class="main-title">🚀 YOLO 目标检测系统</div>
-    <div class="subtitle">基于Gradio的Web界面 | 支持图片/视频/摄像头检测</div>
+    <div class="subtitle">基于Gradio 6.9.0的Web界面 | 支持图片/视频/摄像头检测</div>
     """)
 
     # 全局设置
@@ -467,76 +506,75 @@ with gr.Blocks(title="YOLO目标检测系统", css=custom_css) as demo:
                 outputs=[output_video, video_info],
             )
 
-        # 标签页3: 摄像头实时检测 (使用WebRTC)
+        # 标签页3: 摄像头实时检测 (Gradio 6.x 原生 Streaming)
         with gr.Tab("📹 实时检测"):
+            gr.Markdown("""
+            ### 📹 摄像头实时目标检测
+            
+            **使用说明：**
+            1. 先点击"📥 加载模型"按钮加载YOLO模型
+            2. 然后点击下方"启动摄像头"按钮
+            3. 允许浏览器访问摄像头
+            4. 系统会实时显示检测结果
+            
+            **技术说明：** 使用 Gradio 6.x 原生 streaming 功能（替代 fastrtc）
+            """)
+
             with gr.Row():
                 with gr.Column():
-                    # WebRTC视频组件 - 输入侧
-                    gr.Markdown("""**📹 摄像头实时检测**
-点击"开始"后，允许浏览器访问摄像头""")
-                    webrtc_stream = WebRTC(
-                        label="实时检测输入",
-                        rtc_configuration={
-                            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
-                        },
-                        height=400,
+                    # Gradio 6.x 原生 webcam streaming
+                    webcam_input = gr.Image(
+                        label="摄像头输入",
+                        sources=["webcam"],
+                        type="numpy",
+                        streaming=True,
+                        elem_classes=["webcam-container"],
                     )
-                    # 帧率控制滑块
-                    fps_slider = gr.Slider(
-                        minimum=5,
-                        maximum=30,
-                        value=20,
-                        step=1,
-                        label="🎯 帧率控制 (FPS)",
-                        info="调整检测帧率，较低值可提高检测精度",
-                    )
+
+                    with gr.Row():
+                        start_webcam_btn = gr.Button("🎥 启动摄像头", variant="primary")
+                        stop_webcam_btn = gr.Button("⏹️ 停止", variant="secondary")
 
                 with gr.Column():
-                    # 输出侧
-                    gr.Markdown("""**🔍 检测结果**""")
-                    # 实时检测状态显示
-                    webrtc_status = gr.Textbox(
+                    # 实时检测结果输出
+                    webcam_output = gr.Image(
+                        label="实时检测结果",
+                        type="numpy",
+                        streaming=True,
+                        elem_classes=["webcam-container"],
+                    )
+
+                    webcam_status = gr.Textbox(
                         label="检测状态",
-                        value="请先加载模型，然后点击视频下方的'开始'按钮",
+                        value="请先加载模型，然后启动摄像头",
                         interactive=False,
-                        lines=3,
-                    )
-                    # FPS统计显示
-                    fps_display = gr.Textbox(
-                        label="帧率统计",
-                        value="当前目标帧率: 20 FPS",
-                        interactive=False,
-                        lines=1,
+                        lines=2,
                     )
 
-            # WebRTC流处理 - 使用stream方法
-            # 注意：WebRTC使用不同的处理方式，不需要time_limit参数
-            webrtc_stream.stream(
-                fn=webrtc_detection,
-                inputs=[webrtc_stream, conf_slider, fps_slider],
-                outputs=[webrtc_stream],
+            # Gradio 6.x streaming 事件绑定
+            # 使用 .stream() 方法实现实时视频流处理
+            webcam_input.stream(
+                fn=webcam_detection_stream,
+                inputs=[webcam_input, conf_slider],
+                outputs=[webcam_output],
+                time_limit=300,  # 5分钟超时
+                stream_every=0.1,  # 每100ms处理一帧
             )
 
-            # 更新状态显示
-            def update_webrtc_status():
+            # 状态更新
+            def update_webcam_status_start():
                 if current_model is None:
-                    return "❌ 模型未加载 - 请先加载模型后再开始实时检测"
-                return "✅ 模型已加载 - 可以点击'开始'按钮启动实时检测"
+                    return "❌ 模型未加载 - 请先加载模型"
+                return "✅ 摄像头已启动 - 正在实时检测"
 
-            # 当模型加载后更新状态
-            load_model_btn.click(
-                fn=lambda: update_webrtc_status(), outputs=[webrtc_status]
+            def update_webcam_status_stop():
+                return "⏹️ 摄像头已停止"
+
+            start_webcam_btn.click(
+                fn=update_webcam_status_start, outputs=[webcam_status]
             )
 
-            # 帧率滑块变化时更新显示
-            def update_fps_display(fps):
-                return f"当前目标帧率: {fps} FPS"
-
-            fps_slider.change(
-                fn=update_fps_display,
-                inputs=[fps_slider],
-                outputs=[fps_display],
-            )
+            stop_webcam_btn.click(fn=update_webcam_status_stop, outputs=[webcam_status])
 
         # 标签页4: 批量检测
         with gr.Tab("📂 批量检测"):
@@ -594,18 +632,6 @@ with gr.Blocks(title="YOLO目标检测系统", css=custom_css) as demo:
                     label="📋 已加载模型信息", lines=10, interactive=False
                 )
 
-            def show_model_info():
-                if current_model is None:
-                    return "❌ 尚未加载模型\n\n请先选择一个模型并点击'加载模型'按钮"
-
-                info = f"✅ 当前模型: {model_manager.current_model_path}\n\n"
-                info += f"📊 类别数量: {len(model_manager.class_names)}\n\n"
-                info += f"📋 类别列表:\n"
-                for i, name in enumerate(model_manager.class_names, 1):
-                    info += f"  {i}. {name}\n"
-
-                return info
-
             refresh_info_btn = gr.Button("🔄 刷新信息")
             refresh_info_btn.click(fn=show_model_info, outputs=[model_info_text])
 
@@ -615,5 +641,9 @@ with gr.Blocks(title="YOLO目标检测系统", css=custom_css) as demo:
 
 
 if __name__ == "__main__":
-    # 启动应用
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False, show_error=True)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        show_error=True,
+    )

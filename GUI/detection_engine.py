@@ -3,6 +3,8 @@
 """
 Detection Engine - 检测引擎模块
 负责执行YOLO目标检测的核心逻辑
+
+Gradio 6.9.0 兼容版本
 """
 
 import cv2
@@ -15,7 +17,17 @@ from dataclasses import dataclass
 
 @dataclass
 class DetectionResult:
-    """检测结果数据类"""
+    """检测结果数据类
+
+    Attributes:
+        original_image: 原始输入图像
+        result_image: 带检测框的结果图像
+        inference_time: 推理耗时（秒）
+        object_count: 检测到的目标数量
+        class_counts: 各类别数量统计
+        detections: 详细检测结果列表
+        class_names: 类别名称列表
+    """
 
     original_image: np.ndarray
     result_image: np.ndarray
@@ -30,22 +42,41 @@ class DetectionEngine:
     """检测引擎 - 处理各种检测任务"""
 
     def __init__(self, model):
+        """初始化检测引擎
+
+        Args:
+            model: YOLO模型对象
+        """
         self.model = model
         self.class_names = list(model.names.values()) if model else []
 
     def detect_image(
         self, image: np.ndarray, conf_threshold: float = 0.25
     ) -> DetectionResult:
-        """检测单张图片"""
+        """检测单张图片
+
+        Args:
+            image: 输入图像（numpy数组）
+            conf_threshold: 置信度阈值（默认0.25）
+
+        Returns:
+            DetectionResult对象，包含检测结果和元数据
+
+        Raises:
+            ValueError: 图像为空时抛出
+        """
         if image is None:
             raise ValueError("图片为空")
 
         # 确保图片格式正确
         if len(image.shape) == 2:
+            # 灰度图转RGB
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         elif image.shape[2] == 4:
+            # RGBA转RGB
             image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
         elif image.shape[2] == 3:
+            # BGR转RGB（OpenCV默认读取BGR）
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # 执行检测
@@ -58,7 +89,6 @@ class DetectionEngine:
         result_image = results[0].plot()
 
         # YOLO的plot()方法返回的是BGR格式，需要转换为RGB用于显示
-        # 注意：不要重复转换，否则会导致颜色反转（负片效果）
         if len(result_image.shape) == 3 and result_image.shape[2] == 3:
             result_image = cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB)
 
@@ -112,8 +142,20 @@ class DetectionEngine:
 
     def process_video(
         self, video_path: str, conf_threshold: float = 0.25, progress_callback=None
-    ):
-        """处理视频文件（生成器）"""
+    ) -> Generator[Tuple[int, int, np.ndarray, float, int], None, None]:
+        """处理视频文件（生成器）
+
+        Args:
+            video_path: 视频文件路径
+            conf_threshold: 置信度阈值
+            progress_callback: 进度回调函数（可选）
+
+        Yields:
+            (当前帧数, 总帧数, 结果帧, 推理时间, 目标数量) 元组
+
+        Raises:
+            ValueError: 无法打开视频文件时抛出
+        """
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise ValueError(f"无法打开视频文件: {video_path}")
@@ -169,7 +211,15 @@ class DetectionEngine:
     def process_webcam_frame(
         self, frame: np.ndarray, conf_threshold: float = 0.25
     ) -> np.ndarray:
-        """处理摄像头帧"""
+        """处理摄像头帧
+
+        Args:
+            frame: 输入帧（numpy数组）
+            conf_threshold: 置信度阈值
+
+        Returns:
+            处理后的帧（带检测框）
+        """
         if frame is None:
             return None
 
@@ -190,7 +240,14 @@ class DetectionEngine:
 
 
 def format_detection_info(result: DetectionResult) -> str:
-    """格式化检测信息"""
+    """格式化检测信息为可读文本
+
+    Args:
+        result: DetectionResult对象
+
+    Returns:
+        格式化的检测信息字符串
+    """
     info_lines = []
     info_lines.append(f"🎯 检测到 {result.object_count} 个目标")
     info_lines.append(f"⏱️ 推理耗时: {result.inference_time:.3f} 秒")

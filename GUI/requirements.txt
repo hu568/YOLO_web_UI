@@ -1,9 +1,13 @@
 # Gradio YOLO Detection GUI
-# 使用Gradio重构的YOLO目标检测系统
+# 使用Gradio 6.9.0重构的YOLO目标检测系统
 
-gradio>=4.0.0
-ultralytics>=8.0.0
-opencv-python>=4.8.0
-numpy>=1.24.0
-pillow>=10.0.0
-fastrtc>=0.1.0
+# 核心依赖
+gradio==6.9.0          # Web界面框架 (Gradio 6.9.0)
+ultralytics>=8.0.0     # YOLO模型引擎
+opencv-python>=4.8.0   # 图像/视频处理
+numpy>=1.24.0          # 数值运算
+pillow>=10.0.0         # 图像工具
+
+# 可选依赖（提升性能）
+# torch>=2.0.0         # PyTorch (YOLO需要)
+# torchvision>=0.15.0  # TorchVision

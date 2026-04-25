@@ -3,6 +3,8 @@
 """
 Utils - 工具函数模块
 包含各种辅助函数
+
+Gradio 6.9.0 兼容版本
 """
 
 import os
@@ -25,7 +27,15 @@ def scan_directory_for_images(
         ".tif",
     ),
 ) -> List[Path]:
-    """扫描目录中的所有图片文件"""
+    """扫描目录中的所有图片文件
+
+    Args:
+        directory_path: 目录路径
+        supported_formats: 支持的图片格式元组
+
+    Returns:
+        图片文件路径列表
+    """
     image_files = []
     path = Path(directory_path)
 
@@ -40,7 +50,14 @@ def scan_directory_for_images(
 
 
 def create_detection_summary(results_list: List[dict]) -> str:
-    """创建批量检测汇总报告"""
+    """创建批量检测汇总报告
+
+    Args:
+        results_list: 检测结果列表
+
+    Returns:
+        格式化的汇总报告字符串
+    """
     if not results_list:
         return "暂无检测结果"
 
@@ -95,7 +112,15 @@ def create_detection_summary(results_list: List[dict]) -> str:
 
 
 def save_detection_results(results_list: List[dict], save_dir: str) -> str:
-    """保存检测结果到目录，包括TXT、CSV和HTML报告"""
+    """保存检测结果到目录，包括TXT、CSV和HTML报告
+
+    Args:
+        results_list: 检测结果列表
+        save_dir: 保存目录
+
+    Returns:
+        结果目录路径
+    """
     save_path = Path(save_dir)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     result_dir = save_path / f"detection_results_{timestamp}"
@@ -132,7 +157,14 @@ def save_detection_results(results_list: List[dict], save_dir: str) -> str:
 
 
 def list_available_cameras(max_check: int = 4) -> List[dict]:
-    """列出所有可用摄像头"""
+    """列出所有可用摄像头
+
+    Args:
+        max_check: 最大检查的摄像头索引
+
+    Returns:
+        可用摄像头列表，每个包含id、名称和分辨率
+    """
     cameras = []
 
     for i in range(max_check):
@@ -152,7 +184,14 @@ def list_available_cameras(max_check: int = 4) -> List[dict]:
 
 
 def check_camera_available(camera_id: int = 0) -> bool:
-    """检查指定摄像头是否可用"""
+    """检查指定摄像头是否可用
+
+    Args:
+        camera_id: 摄像头ID
+
+    Returns:
+        是否可用
+    """
     cap = cv2.VideoCapture(camera_id)
     if cap.isOpened():
         ret, frame = cap.read()
@@ -162,7 +201,15 @@ def check_camera_available(camera_id: int = 0) -> bool:
 
 
 def create_detection_csv(results_list: List[dict], save_path: str) -> str:
-    """创建CSV格式的检测报告"""
+    """创建CSV格式的检测报告
+
+    Args:
+        results_list: 检测结果列表
+        save_path: 保存路径
+
+    Returns:
+        CSV文件路径
+    """
     import csv
 
     csv_path = Path(save_path) / "detection_report.csv"
@@ -197,7 +244,15 @@ def create_detection_csv(results_list: List[dict], save_path: str) -> str:
 
 
 def create_detection_html(results_list: List[dict], save_path: str) -> str:
-    """创建带超链接和类别筛选功能的HTML检测报告"""
+    """创建带超链接和类别筛选功能的HTML检测报告
+
+    Args:
+        results_list: 检测结果列表
+        save_path: 保存路径
+
+    Returns:
+        HTML文件路径
+    """
     from html import escape
 
     html_path = Path(save_path) / "detection_report.html"
