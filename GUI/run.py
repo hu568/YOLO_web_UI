@@ -112,9 +112,9 @@ def main():
     print()
 
     try:
-        from gradio_app import demo
+        from gradio_app import demo, custom_css
 
-        # Gradio 6.x: theme/css 参数移至 launch() 方法
+        # Gradio 5.x/6.x: css 参数在 Blocks() 中传入
         demo.launch(
             server_name="0.0.0.0", server_port=7860, share=False, show_error=True
         )

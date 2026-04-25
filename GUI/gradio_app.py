@@ -437,7 +437,7 @@ def show_model_info():
 # 使用海洋主题
 ocean_theme = Ocean()
 
-with gr.Blocks(title="YOLO目标检测系统", theme=ocean_theme) as demo:
+with gr.Blocks(title="YOLO目标检测系统", theme=ocean_theme, css=custom_css) as demo:
     # 标题
     gr.Markdown("""
     <div class="main-title">🚀 YOLO 目标检测系统</div>
@@ -641,11 +641,9 @@ with gr.Blocks(title="YOLO目标检测系统", theme=ocean_theme) as demo:
 
 
 if __name__ == "__main__":
-    # Gradio 6.x: theme/css/js 参数移至 launch() 方法
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
         share=False,
         show_error=True,
-        css=custom_css,  # Gradio 6.x 中通过 launch() 传入CSS
     )
